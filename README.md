@@ -6,7 +6,76 @@ This repository contains the Infrastructure as Code (CloudFormation) template fo
 The previous environment depended on a single server, which created risks such as downtime, performance bottlenecks, and manual operational processes during high-volume sales events[cite: 2]. This modern infrastructure design improves application availability, strengthens security, automates deployment, and supports dynamic growth during traffic spikes[cite: 2].
 
 ## 🏗️ Architecture Diagram
-*(Upload the Mermaid architecture diagram image to your repository and link it here, e.g., `![Architecture Diagram](diagram.png)`)*
+```mermaid
+graph TD
+    subgraph AWS Cloud
+        IGW[Internet Gateway]
+        
+        subgraph VPC [VPC: 10.0.0.0/20]
+            ALB[Application Load Balancer]
+            
+            subgraph AZ1 [Availability Zone 1]
+                subgraph PubSub1 [Public Subnet 1]
+                    NAT[NAT Gateway]
+                    Bastion1[Bastion Host 1]
+                end
+                
+                subgraph PrivSub1 [Private Subnet 1]
+                    WP1[WordPress / Nginx Server]
+                end
+                
+                subgraph DBSub1 [Database Subnet 1]
+                    DBPrimary[(RDS MySQL - Primary)]
+                end
+            end
+            
+            subgraph AZ2 [Availability Zone 2]
+                subgraph PubSub2 [Public Subnet 2]
+                    Bastion2[Bastion Host 2]
+                end
+                
+                subgraph PrivSub2 [Private Subnet 2]
+                    WP2[WordPress / Nginx Server]
+                end
+                
+                subgraph DBSub2 [Database Subnet 2]
+                    DBStandby[(RDS MySQL - Standby)]
+                end
+            end
+        end
+    end
+
+    %% External Traffic
+    EndUser((End User)) -->|HTTP/HTTPS| IGW
+    Admin((Administrator)) -->|SSH| IGW
+
+    %% Inbound Routing
+    IGW -->|Web Traffic| ALB
+    IGW -->|Admin Access| Bastion1
+    IGW -->|Admin Access| Bastion2
+
+    %% ALB to Private Instances
+    ALB -->|Port 80| WP1
+    ALB -->|Port 80| WP2
+
+    %% Bastion SSH Access
+    Bastion1 -.->|SSH Port 22| WP1
+    Bastion1 -.->|SSH Port 22| WP2
+    Bastion2 -.->|SSH Port 22| WP1
+    Bastion2 -.->|SSH Port 22| WP2
+
+    %% App to Database
+    WP1 -->|Port 3306| DBPrimary
+    WP2 -->|Port 3306| DBPrimary
+    
+    %% DB Replication
+    DBPrimary -.->|Multi-AZ Sync| DBStandby
+
+    %% Outbound Internet (Updates/Installs)
+    WP1 -.->|Outbound Request| NAT
+    WP2 -.->|Outbound Request| NAT
+    NAT -.-> IGW
+```
 
 The architecture is built on AWS and features a highly available, Multi-AZ deployment. The network is divided into public subnets (for edge routing and administrative access), private subnets (for the application layer), and isolated database subnets (for data persistence).
 
