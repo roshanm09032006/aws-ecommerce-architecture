@@ -34,7 +34,7 @@ The architecture is built on AWS and features a highly available, Multi-AZ deplo
 1. Log in to the [AWS Management Console](https://aws.amazon.com/console/).
 2. Navigate to the **CloudFormation** service.
 3. Click **Create stack** (With new resources (standard)).
-4. Select **Upload a template file**, choose `cloud_formation_template.yaml` from this repository, and click **Next**.
+4. Select **Upload a template file**, choose `project_cloud_formation_template.yaml` from this repository, and click **Next**.
 5. Provide a **Stack name** (e.g., `shopvibe-infrastructure`).
 6. Fill in the required parameters:
    * **KeyName:** Select your existing EC2 Key Pair.
