@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  ShopVibe E-Commerce Modernization Platform. Fully automated Multi-AZ, 
-  highly available, auto-scaling WordPress architecture with Nginx and isolated RDS Database.
+  ShopVibe E-Commerce Modernization Platform. Multi-AZ, highly available, 
+  auto-scaling Nginx WordPress architecture with isolated RDS Database and shared Amazon EFS storage.
 
 Parameters:
   KeyName:
@@ -280,6 +280,20 @@ Resources:
         - Key: Name
           Value: shopvibe-db-sg
 
+  EfsSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Firewall rules for Amazon EFS Shared Storage Network
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049   # Network File System (NFS) port
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref PrivateSG
+      Tags:
+        - Key: Name
+          Value: shopvibe-efs-sg
+
   ##########################
   # Load Balancing Layer
   ##########################
@@ -321,6 +335,33 @@ Resources:
           TargetGroupArn: !Ref ALBTargetGroup
 
   ##########################
+  # Amazon EFS (Shared File System)
+  ##########################
+  SharedEFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: shopvibe-wp-shared-storage
+
+  EfsMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedEFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EfsSG
+
+  EfsMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedEFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EfsSG
+
+  ##########################
   # Dynamic Auto Scaling & Automation (NGINX)
   ##########################
   WordPressLaunchTemplate:
@@ -337,24 +378,20 @@ Resources:
           Fn::Base64: !Sub |
             #!/bin/bash
             dnf update -y
-            # Install Nginx, PHP-FPM, and necessary extensions
-            dnf install -y nginx php php-fpm php-mysqli php-gd php-xml mariadb105 wget tar
+            # Install Nginx, PHP, MariaDB Client, and Amazon EFS Utilities
+            dnf install -y nginx php php-fpm php-mysqli php-gd php-xml mariadb105 wget tar amazon-efs-utils
             
-            # Reconfigure PHP-FPM to run as the nginx user (default is apache)
+            # Reconfigure PHP-FPM to run as the nginx user
             sed -i 's/user = apache/user = nginx/g' /etc/php-fpm.d/www.conf
             sed -i 's/group = apache/group = nginx/g' /etc/php-fpm.d/www.conf
             
-            # Wipe the default nginx.conf so we have a clean slate without port 80 conflicts
+            # Wipe and build default nginx.conf without conflicts
             cat > /etc/nginx/nginx.conf << 'EOF'
             user nginx;
             worker_processes auto;
             error_log /var/log/nginx/error.log notice;
             pid /run/nginx.pid;
-            
-            events {
-                worker_connections 1024;
-            }
-            
+            events { worker_connections 1024; }
             http {
                 include /etc/nginx/mime.types;
                 default_type application/octet-stream;
@@ -362,26 +399,20 @@ Resources:
                 access_log /var/log/nginx/access.log main;
                 sendfile on;
                 keepalive_timeout 65;
-                
-                # Include custom configuration files
                 include /etc/nginx/conf.d/*.conf;
             }
             EOF
             
-            # Create the Nginx server block for WordPress
+            # Create Nginx server block routing details
             cat > /etc/nginx/conf.d/wordpress.conf << 'EOF'
             server {
                 listen 80;
                 server_name _;
                 root /usr/share/nginx/html;
                 index index.php index.html index.htm;
-                
-                # Handle WordPress Permalinks
                 location / {
                     try_files $uri $uri/ /index.php?$args;
                 }
-                
-                # Pass PHP scripts to PHP-FPM
                 location ~ \.php$ {
                     try_files $uri =404;
                     fastcgi_pass unix:/run/php-fpm/www.sock;
@@ -392,18 +423,27 @@ Resources:
             }
             EOF
             
-            # Start and enable the services
+            # Start services
             systemctl enable nginx php-fpm
             systemctl start nginx php-fpm
             
-            # Deploy WordPress to the default Nginx web directory
+            # Set up the installation directory and pull down WordPress
             cd /usr/share/nginx/html
             wget https://wordpress.org/latest.tar.gz
             tar -xzf latest.tar.gz
             cp -r wordpress/* .
             rm -rf wordpress latest.tar.gz
             
-            # Apply strict web permissions for the Nginx user
+            # Setup EFS Shared Drive specifically for dynamic media and plugin uploads
+            mkdir -p /usr/share/nginx/html/wp-content
+            
+            # Mount the Amazon EFS network directory using the logical EFS ID
+            mount -t efs -o tls ${SharedEFileSystem}:/ /usr/share/nginx/html/wp-content
+            
+            # Append mount rule to fstab to keep storage mapped correctly through reboots
+            echo "${SharedEFileSystem}:/ /usr/share/nginx/html/wp-content efs defaults,_netdev,tls 0 0" >> /etc/fstab
+            
+            # Re-ensure ownership permissions look clean across the system
             chown -R nginx:nginx /usr/share/nginx/html
             chmod -R 755 /usr/share/nginx/html
         TagSpecifications:
@@ -414,6 +454,9 @@ Resources:
 
   WordPressAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: 
+      - EfsMountTarget1
+      - EfsMountTarget2
     Properties:
       AutoScalingGroupName: shopvibe-asg
       VPCZoneIdentifier:
