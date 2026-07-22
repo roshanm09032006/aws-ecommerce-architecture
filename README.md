@@ -1,9 +1,13 @@
-# ShopVibe E-Commerce Cloud Infrastructure Modernization
+# ShopVibe E-Commerce Modernization Platform
 
-## 📌 Project Overview
-This repository contains the Infrastructure as Code (CloudFormation) template for the **ShopVibe Holiday Flash Sale** modernization project[cite: 2]. 
+![AWS CloudFormation](https://img.shields.io/badge/IaC-CloudFormation-FF4F8B?logo=amazon-aws&logoColor=white)
+![Nginx](https://img.shields.io/badge/Web_Server-Nginx-009639?logo=nginx&logoColor=white)
+![WordPress](https://img.shields.io/badge/CMS-WordPress-21759B?logo=wordpress&logoColor=white)
+![PHP](https://img.shields.io/badge/Language-PHP-777BB4?logo=php&logoColor=white)
+![MySQL](https://img.shields.io/badge/Database-MySQL-4479A1?logo=mysql&logoColor=white)
+![Amazon EC2 Auto Scaling](https://img.shields.io/badge/Compute-Auto_Scaling-FF9900?logo=amazon-aws&logoColor=white)
 
-The previous environment depended on a single server, which created risks such as downtime, performance bottlenecks, and manual operational processes during high-volume sales events[cite: 2]. This modern infrastructure design improves application availability, strengthens security, automates deployment, and supports dynamic growth during traffic spikes[cite: 2].
+This repository contains the infrastructure code for the ShopVibe E-Commerce Modernization Platform[cite: 2]. It deploys a Multi-AZ, highly available, auto-scaling Nginx WordPress architecture with an isolated RDS Database and shared Amazon EFS storage[cite: 2].
 
 ## 🏗️ Architecture Diagram
 ```mermaid
